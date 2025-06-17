@@ -1,0 +1,567 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>English Chunking Quiz</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Roboto', sans-serif;
+    }
+    .card {
+      @apply bg-white rounded-lg shadow-lg p-6 transition-all duration-300 hover:shadow-xl;
+    }
+    .btn {
+      @apply px-20 py-10 rounded-xl font-medium transition-colors duration-200;
+    }
+    .btn-sm {
+      @apply px-10 py-5 rounded-xl font-medium transition-colors duration-200;
+    }
+    .btn:hover {
+      @apply scale-105;
+    }
+    .custom-checkbox {
+      @apply w-5 h-5 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500;
+    }
+    .spinner {
+      @apply w-6 h-6 border-4 border-blue-500 border-t-transparent rounded-full animate-spin;
+    }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen flex items-center justify-center">
+  <div class="w-full max-w-3xl mx-auto p-4">
+    <!-- Header -->
+    <div class="card mb-6">
+      <h1 class="text-3xl font-bold text-gray-800 text-center mb-4">English Chunking Quiz</h1>
+      <div class="flex justify-between items-center mb-6">
+        <button id="prev" class="btn bg-blue-100 text-blue-800 hover:bg-blue-200" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">← Previous</button>
+        <div class="flex flex-col items-center">
+          <div id="topic" class="text-lg font-medium text-gray-700 mb-2"></div>
+          <select id="topicFilter" class="border border-gray-300 rounded-xl p-2 bg-white text-gray-700">
+            <option value="All">All Topics</option>
+          </select>
+        </div>
+        <button id="next" class="btn bg-blue-100 text-blue-800 hover:bg-blue-200" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Next →</button>
+      </div>
+      <div id="questionInfo" class="text-center text-gray-600 mb-4">Question 1 of 5</div>
+    </div>
+
+    <!-- Main Content -->
+    <div class="card mb-6">
+      <div id="questionContainer" class="mb-4 text-lg text-gray-800"></div>
+      <div id="templateContainer" class="mb-4 text-lg text-gray-800"></div>
+      <div id="optionsContainer" class="mb-6"></div>
+      <div class="flex justify-center mb-2">
+        <button id="submit" class="btn-sm bg-green-500 text-white hover:bg-green-600" style="padding-left: 15px; padding-right: 15px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Submit</button>
+      </div>
+      <div class="flex justify-center">
+        <button id="moveNext" class="btn bg-blue-500 text-white hover:bg-blue-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" class="w-full hidden">Next Question</button>
+      </div>
+    </div>
+
+    <!-- Toolbar -->
+    <div class="card flex justify-between items-center p-4 mb-6">
+      <input type="file" id="importLocalFile" accept=".xlsx, .xls, .csv" class="hidden">
+      <button id="importLocalData" class="btn bg-purple-500 text-white hover:bg-purple-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Import Data</button>
+      <div class="space-x-2">
+        <button id="showHistory" class="btn bg-gray-500 text-white hover:bg-gray-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">History</button>
+        <button id="showManage" class="btn bg-indigo-500 text-white hover:bg-indigo-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Manage Questions</button>
+        <button id="showTopics" class="btn bg-indigo-700 text-white hover:bg-indigo-800" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Manage Topics</button>
+        <button id="showInput" class="btn bg-yellow-500 text-white hover:bg-yellow-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Add Question</button>
+      </div>
+    </div>
+
+    <!-- Result -->
+    <div id="result" class="text-center text-green-600 mb-4 hidden"></div>
+
+    <!-- History Section -->
+    <div id="history" class="card mb-6 hidden">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">History</h2>
+      <ul id="historyList" class="list-disc pl-5 text-gray-700"></ul>
+    </div>
+
+    <!-- Manage Questions Section -->
+    <div id="manageSection" class="card mb-6 hidden">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">Manage Questions</h2>
+      <div class="mb-4">
+        <select id="manageTopicFilter" class="border border-gray-300 rounded-xl p-2 bg-white text-gray-700">
+          <option value="All">All Topics</option>
+        </select>
+      </div>
+      <ul id="questionList" class="space-y-4"></ul>
+      <button id="exportExcel" class="btn bg-teal-700 text-white hover:bg-teal-800" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px; w-full mt-4">Export to Excel</button>
+    </div>
+
+    <!-- Manage Topics Section -->
+    <div id="manageTopicsSection" class="card mb-6 hidden">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">Manage Topics</h2>
+      <input id="newTopic" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700" placeholder="Enter new topic">
+      <button id="addTopic" class="btn-sm bg-purple-500 text-white hover:bg-purple-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px; w-full mb-4">Add Topic</button>
+      <ul id="topicList" class="space-y-2"></ul>
+    </div>
+
+    <!-- Add Question Modal -->
+    <div id="addModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
+      <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+        <h2 class="text-2xl font-bold text-gray-800 mb-4">Add New Question</h2>
+        <select id="topicSelect" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700">
+          <option value="">Select a topic</option>
+        </select>
+        <input id="newQuestion" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700" placeholder="Enter question">
+        <input id="newTemplate" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700" placeholder="Enter template">
+        <input id="newOptions" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700" placeholder="Enter options (e.g., option1;option2)">
+        <div class="flex justify-end space-x-2">
+          <button id="addQuestion" class="btn bg-purple-500 text-white hover:bg-purple-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Add</button>
+          <button id="closeAddModal" class="btn bg-red-500 text-white hover:bg-red-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Question Modal -->
+    <div id="editModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
+      <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+        <h2 class="text-2xl font-bold text-gray-800 mb-4">Edit Question</h2>
+        <select id="editTopicSelect" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700">
+          <option value="">Select a topic</option>
+        </select>
+        <input id="editQuestion" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700" placeholder="Enter question">
+        <input id="editTemplate" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700" placeholder="Enter template">
+        <input id="editOptions" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700" placeholder="Enter options (e.g., option1;option2)">
+        <div class="flex justify-end space-x-2">
+          <button id="saveEdit" class="btn bg-orange-500 text-white hover:bg-orange-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Save</button>
+          <button id="closeEditModal" class="btn bg-red-500 text-white hover:bg-red-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Edit Topic Modal -->
+    <div id="editTopicModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
+      <div class="bg-white rounded-lg shadow-lg p-6 w-full max-w-md">
+        <h2 class="text-2xl font-bold text-gray-800 mb-4">Edit Topic</h2>
+        <input id="editTopicInput" class="border border-gray-300 rounded-xl p-2 w-full mb-2 text-gray-700" placeholder="Enter new topic name">
+        <div class="flex justify-end space-x-2">
+          <button id="saveTopicEdit" class="btn bg-orange-500 text-white hover:bg-orange-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Save</button>
+          <button id="closeEditTopicModal" class="btn bg-red-500 text-white hover:bg-red-600" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;">Cancel</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Loading Spinner -->
+    <div id="loading" class="fixed inset-0 bg-gray-600 bg-opacity-50 hidden flex items-center justify-center">
+      <div class="spinner"></div>
+    </div>
+  </div>
+
+  <script>
+    let questions = JSON.parse(localStorage.getItem('questions') || '[]');
+    let topics = JSON.parse(localStorage.getItem('topics') || '[]');
+    let history = JSON.parse(localStorage.getItem('history') || '[]');
+    let currentQuestionIndex = 0;
+    let filteredQuestions = [...questions];
+    let currentEditTopicIndex = null;
+
+    function loadQuestion() {
+      const loading = document.getElementById('loading');
+      loading.classList.remove('hidden');
+      setTimeout(() => {
+        if (filteredQuestions.length === 0) {
+          document.getElementById('questionContainer').innerHTML = 'No questions available for this topic. Add some!';
+          document.getElementById('templateContainer').innerHTML = '';
+          document.getElementById('optionsContainer').innerHTML = '';
+          document.getElementById('topic').textContent = '';
+          document.getElementById('questionInfo').textContent = 'No questions';
+          document.getElementById('submit').classList.add('hidden');
+          loading.classList.add('hidden');
+          return;
+        }
+        const q = filteredQuestions[currentQuestionIndex % filteredQuestions.length];
+        document.getElementById('questionContainer').innerHTML = `${q.question} <button class="bg-blue-100 text-blue-800 px-2 py-1 rounded ml-2 play-audio" data-text="${q.question}">🔊</button>`;
+        document.getElementById('templateContainer').innerHTML = `${q.template} <button class="bg-blue-100 text-blue-800 px-2 py-1 rounded ml-2 play-audio" data-text="${q.template}">🔊</button>`;
+        document.getElementById('optionsContainer').innerHTML = q.options.map((opt, i) => `<div class="mb-2 flex items-center"><input type="checkbox" name="option" value="${opt}" class="custom-checkbox mr-2"><span class="text-gray-700">${opt}</span> <button class="bg-blue-100 text-blue-800 px-2 py-1 rounded ml-2 play-audio" data-text="${opt}">🔊</button></div>`).join('');
+        document.getElementById('topic').textContent = q.topic ? `Topic: ${q.topic}` : '';
+        document.getElementById('questionInfo').textContent = `Question ${currentQuestionIndex + 1} of ${filteredQuestions.length}`;
+        document.getElementById('submit').classList.remove('hidden');
+        document.getElementById('moveNext').classList.add('hidden');
+        document.getElementById('result').classList.add('hidden');
+        loading.classList.add('hidden');
+
+        document.querySelectorAll('.play-audio').forEach(button => {
+          button.addEventListener('click', () => {
+            const text = button.getAttribute('data-text');
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'en-US';
+            window.speechSynthesis.speak(utterance);
+          });
+        });
+      }, 500);
+    }
+
+    function updateTopicDropdowns() {
+      const topicSelect = document.getElementById('topicSelect');
+      const editTopicSelect = document.getElementById('editTopicSelect');
+      const topicFilter = document.getElementById('topicFilter');
+      const manageTopicFilter = document.getElementById('manageTopicFilter');
+      topicSelect.innerHTML = '<option value="">Select a topic</option>';
+      editTopicSelect.innerHTML = '<option value="">Select a topic</option>';
+      topicFilter.innerHTML = '<option value="All">All Topics</option>';
+      manageTopicFilter.innerHTML = '<option value="All">All Topics</option>';
+      const uniqueTopics = [...new Set(questions.map(q => q.topic).filter(t => t))].sort();
+      uniqueTopics.forEach(topic => {
+        const option = document.createElement('option');
+        option.value = topic;
+        option.textContent = topic;
+        topicSelect.appendChild(option.cloneNode(true));
+        editTopicSelect.appendChild(option.cloneNode(true));
+        topicFilter.appendChild(option.cloneNode(true));
+        manageTopicFilter.appendChild(option.cloneNode(true));
+      });
+    }
+
+    function importLocalData(event) {
+      const fileInput = document.getElementById('importLocalFile');
+      const file = fileInput.files[0];
+      if (!file) {
+        document.getElementById('result').textContent = 'Please select an Excel file!';
+        document.getElementById('result').classList.remove('hidden');
+        setTimeout(() => document.getElementById('result').classList.add('hidden'), 3000);
+        return;
+      }
+
+      const loading = document.getElementById('loading');
+      loading.classList.remove('hidden');
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, { type: 'array' });
+        
+        questions = [];
+        if (workbook.Sheets['QuestionsData']) {
+          const headers = XLSX.utils.sheet_to_json(workbook.Sheets['QuestionsData'], { header: 1 })[0];
+          const dataRows = XLSX.utils.sheet_to_json(workbook.Sheets['QuestionsData'], { header: 1, range: 1 });
+          dataRows.forEach(row => {
+            const topic = row[headers.indexOf('Topic')] || '';
+            const question = row[headers.indexOf('Question')];
+            const template = row[headers.indexOf('Template')];
+            const options = row[headers.indexOf('Options')];
+            if (question && template) {
+              let parsedOptions = [];
+              if (options !== undefined && options !== null) {
+                const optionsStr = String(options).trim();
+                if (optionsStr.includes(';')) {
+                  parsedOptions = optionsStr.split(';').map(opt => opt.trim()).filter(opt => opt.length > 0);
+                } else if (optionsStr.length > 0) {
+                  parsedOptions = [optionsStr];
+                }
+              }
+              questions.push({ topic, question, template, options: parsedOptions });
+            }
+          });
+        }
+
+        topics = workbook.Sheets['Topics'] ? XLSX.utils.sheet_to_json(workbook.Sheets['Topics'], { header: 1 }).slice(1).map(row => row[0]).filter(t => t) : [];
+        history = workbook.Sheets['History'] ? XLSX.utils.sheet_to_json(workbook.Sheets['History'], { header: 1 }).slice(1).filter(row => row[0] && row[1] && row[2] && row[3]).map(row => ({
+          question: row[0], template: row[1], answer: row[2], timestamp: row[3]
+        })) : [];
+
+        localStorage.setItem('questions', JSON.stringify(questions));
+        localStorage.setItem('topics', JSON.stringify(topics));
+        localStorage.setItem('history', JSON.stringify(history));
+        filteredQuestions = [...questions];
+        currentQuestionIndex = 0;
+        loadQuestion();
+        updateTopicDropdowns();
+        loading.classList.add('hidden');
+        document.getElementById('result').textContent = 'Import successful!';
+        document.getElementById('result').classList.remove('hidden');
+        setTimeout(() => document.getElementById('result').classList.add('hidden'), 3000);
+      };
+      reader.readAsArrayBuffer(file);
+    }
+
+    function closeAllSections() {
+      document.getElementById('history').classList.add('hidden');
+      document.getElementById('manageSection').classList.add('hidden');
+      document.getElementById('manageTopicsSection').classList.add('hidden');
+      document.getElementById('addModal').classList.add('hidden');
+      document.getElementById('editModal').classList.add('hidden');
+      document.getElementById('editTopicModal').classList.add('hidden');
+    }
+
+    document.getElementById('submit').addEventListener('click', () => {
+      const selectedOptions = Array.from(document.querySelectorAll('input[name="option"]:checked')).map(cb => cb.value);
+      if (selectedOptions.length === 0) return;
+      const answer = selectedOptions.join(', ');
+      const q = filteredQuestions[currentQuestionIndex % filteredQuestions.length];
+      document.getElementById('result').textContent = `You selected: ${answer}`;
+      document.getElementById('result').classList.remove('hidden');
+      document.getElementById('submit').classList.add('hidden');
+      document.getElementById('moveNext').classList.remove('hidden');
+      history.push({ question: q.question, template: q.template, answer, timestamp: new Date().toLocaleString() });
+      localStorage.setItem('history', JSON.stringify(history));
+    });
+
+    document.getElementById('moveNext').addEventListener('click', () => {
+      currentQuestionIndex = (currentQuestionIndex + 1) % filteredQuestions.length;
+      loadQuestion();
+    });
+
+    document.getElementById('prev').addEventListener('click', () => {
+      currentQuestionIndex = (currentQuestionIndex - 1 + filteredQuestions.length) % filteredQuestions.length;
+      loadQuestion();
+    });
+
+    document.getElementById('next').addEventListener('click', () => {
+      currentQuestionIndex = (currentQuestionIndex + 1) % filteredQuestions.length;
+      loadQuestion();
+    });
+
+    document.getElementById('showHistory').addEventListener('click', () => {
+      closeAllSections();
+      const historyList = document.getElementById('historyList');
+      historyList.innerHTML = history.map(h => `<li class="text-gray-700">${h.question} - ${h.template} - ${h.answer} - ${h.timestamp}</li>`).join('');
+      document.getElementById('history').classList.remove('hidden');
+    });
+
+    document.getElementById('showManage').addEventListener('click', () => {
+      closeAllSections();
+      const manageTopicFilter = document.getElementById('manageTopicFilter');
+      const questionList = document.getElementById('questionList');
+      let filteredQuestionsForManage = questions;
+      if (manageTopicFilter.value !== 'All') {
+        filteredQuestionsForManage = questions.filter(q => q.topic === manageTopicFilter.value);
+      } else {
+        filteredQuestionsForManage.sort((a, b) => (a.topic || '').localeCompare(b.topic || ''));
+      }
+      questionList.innerHTML = filteredQuestionsForManage.map((q, i) => {
+        const topicIndex = questions.filter(tq => tq.topic === q.topic).indexOf(q) + 1;
+        return `<li class="p-4 border border-gray-200 rounded-lg bg-gray-50"><span class="font-bold text-gray-800">${q.topic || 'No Topic'} Q${topicIndex}</span><br><span class="text-gray-600">Question: ${q.question}</span><br><span class="text-gray-600">Template: ${q.template}</span><br><span class="text-gray-600">Options: ${q.options.join(', ')}</span><span class="float-right space-x-2"><button class="btn bg-blue-500 text-white hover:bg-blue-600 edit-btn" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${questions.indexOf(q)}">Edit</button><button class="btn bg-red-500 text-white hover:bg-red-600 delete-btn" style="padding-left: 10px; padding-right: 10px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${questions.indexOf(q)}">Delete</button></span></li>`;
+      }).join('');
+      document.getElementById('manageSection').classList.remove('hidden');
+    });
+
+    document.getElementById('questionList').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (e.target.classList.contains('edit-btn')) {
+        closeAllSections();
+        const index = parseInt(e.target.dataset.index);
+        const q = questions[index];
+        document.getElementById('editTopicSelect').value = q.topic || '';
+        document.getElementById('editQuestion').value = q.question;
+        document.getElementById('editTemplate').value = q.template;
+        document.getElementById('editOptions').value = q.options.join('; ');
+        document.getElementById('editModal').classList.remove('hidden');
+        currentEditIndex = index;
+      } else if (e.target.classList.contains('delete-btn')) {
+        const index = parseInt(e.target.dataset.index);
+        questions.splice(index, 1);
+        localStorage.setItem('questions', JSON.stringify(questions));
+        filteredQuestions = [...questions];
+        if (currentQuestionIndex >= filteredQuestions.length) currentQuestionIndex = 0;
+        loadQuestion();
+        document.getElementById('showManage').click();
+      }
+    });
+
+    document.getElementById('saveEdit').addEventListener('click', () => {
+      const topic = document.getElementById('editTopicSelect').value;
+      const question = document.getElementById('editQuestion').value;
+      const template = document.getElementById('editTemplate').value;
+      const optionsInput = document.getElementById('editOptions').value;
+      let options = [];
+      if (optionsInput && typeof optionsInput === 'string') {
+        options = optionsInput.split(';').map(opt => opt.trim()).filter(opt => opt.length > 0);
+      }
+      if (question && template && options.length) {
+        questions[currentEditIndex] = { topic, question, template, options };
+        localStorage.setItem('questions', JSON.stringify(questions));
+        document.getElementById('editTopicSelect').value = '';
+        document.getElementById('editQuestion').value = '';
+        document.getElementById('editTemplate').value = '';
+        document.getElementById('editOptions').value = '';
+        document.getElementById('editModal').classList.add('hidden');
+        filteredQuestions = topic ? questions.filter(q => q.topic === topic) : [...questions];
+        currentQuestionIndex = 0;
+        loadQuestion();
+        document.getElementById('showManage').click();
+      }
+    });
+
+    document.getElementById('closeEditModal').addEventListener('click', () => {
+      document.getElementById('editTopicSelect').value = '';
+      document.getElementById('editQuestion').value = '';
+      document.getElementById('editTemplate').value = '';
+      document.getElementById('editOptions').value = '';
+      document.getElementById('editModal').classList.add('hidden');
+      document.getElementById('showManage').click();
+    });
+
+    document.getElementById('showInput').addEventListener('click', () => {
+      closeAllSections();
+      updateTopicDropdowns();
+      document.getElementById('addModal').classList.remove('hidden');
+    });
+
+    document.getElementById('addQuestion').addEventListener('click', () => {
+      const topic = document.getElementById('topicSelect').value;
+      const question = document.getElementById('newQuestion').value;
+      const template = document.getElementById('newTemplate').value;
+      const optionsInput = document.getElementById('newOptions').value;
+      let options = [];
+      if (optionsInput && typeof optionsInput === 'string') {
+        options = optionsInput.split(';').map(opt => opt.trim()).filter(opt => opt.length > 0);
+      }
+      if (question && template && options.length) {
+        questions.push({ topic, question, template, options });
+        localStorage.setItem('questions', JSON.stringify(questions));
+        document.getElementById('topicSelect').value = '';
+        document.getElementById('newQuestion').value = '';
+        document.getElementById('newTemplate').value = '';
+        document.getElementById('newOptions').value = '';
+        document.getElementById('addModal').classList.add('hidden');
+        filteredQuestions = topic ? questions.filter(q => q.topic === topic) : [...questions];
+        currentQuestionIndex = filteredQuestions.length - 1;
+        loadQuestion();
+      }
+    });
+
+    document.getElementById('closeAddModal').addEventListener('click', () => {
+      document.getElementById('topicSelect').value = '';
+      document.getElementById('newQuestion').value = '';
+      document.getElementById('newTemplate').value = '';
+      document.getElementById('newOptions').value = '';
+      document.getElementById('addModal').classList.add('hidden');
+    });
+
+    document.getElementById('showTopics').addEventListener('click', () => {
+      closeAllSections();
+      const topicList = document.getElementById('topicList');
+      topicList.innerHTML = topics.map((topic, i) => `<li class="flex justify-between items-center p-2 bg-gray-50 rounded-lg"><span class="text-gray-700">${topic}</span><span class="space-x-2"><button class="btn bg-blue-500 text-white hover:bg-blue-600 edit-topic-btn" style="padding-left: 15px; padding-right: 15px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${i}">Edit</button><button class="btn bg-red-500 text-white hover:bg-red-600 delete-topic-btn" style="padding-left: 15px; padding-right: 15px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${i}">Delete</button></span></li>`).join('');
+      document.getElementById('manageTopicsSection').classList.remove('hidden');
+    });
+
+    document.getElementById('topicList').addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (e.target.classList.contains('edit-topic-btn')) {
+        closeAllSections();
+        const index = parseInt(e.target.dataset.index);
+        currentEditTopicIndex = index;
+        document.getElementById('editTopicInput').value = topics[index];
+        document.getElementById('editTopicModal').classList.remove('hidden');
+      } else if (e.target.classList.contains('delete-topic-btn')) {
+        const index = parseInt(e.target.dataset.index);
+        topics.splice(index, 1);
+        questions = questions.filter(q => q.topic !== topics[index]);
+        localStorage.setItem('topics', JSON.stringify(topics));
+        localStorage.setItem('questions', JSON.stringify(questions));
+        document.getElementById('topicList').innerHTML = topics.map((topic, i) => `<li class="flex justify-between items-center p-2 bg-gray-50 rounded-lg"><span class="text-gray-700">${topic}</span><span class="space-x-2"><button class="btn bg-blue-500 text-white hover:bg-blue-600 edit-topic-btn" style="padding-left: 15px; padding-right: 15px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${i}">Edit</button><button class="btn bg-red-500 text-white hover:bg-red-600 delete-topic-btn" style="padding-left: 15px; padding-right: 15px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${i}">Delete</button></span></li>`).join('');
+        updateTopicDropdowns();
+      }
+    });
+
+    document.getElementById('addTopic').addEventListener('click', () => {
+      const newTopic = document.getElementById('newTopic').value.trim();
+      if (newTopic && !topics.includes(newTopic)) {
+        topics.push(newTopic);
+        localStorage.setItem('topics', JSON.stringify(topics));
+        document.getElementById('newTopic').value = '';
+        document.getElementById('topicList').innerHTML = topics.map((topic, i) => `<li class="flex justify-between items-center p-2 bg-gray-50 rounded-lg"><span class="text-gray-700">${topic}</span><span class="space-x-2"><button class="btn bg-blue-500 text-white hover:bg-blue-600 edit-topic-btn" style="padding-left: 15px; padding-right: 15px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${i}">Edit</button><button class="btn bg-red-500 text-white hover:bg-red-600 delete-topic-btn" style="padding-left: 15px; padding-right: 15px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${i}">Delete</button></span></li>`).join('');
+        updateTopicDropdowns();
+      }
+    });
+
+    document.getElementById('saveTopicEdit').addEventListener('click', () => {
+      const newTopic = document.getElementById('editTopicInput').value.trim();
+      if (newTopic && newTopic !== topics[currentEditTopicIndex]) {
+        const oldTopic = topics[currentEditTopicIndex];
+        topics[currentEditTopicIndex] = newTopic;
+        questions.forEach(q => { if (q.topic === oldTopic) q.topic = newTopic; });
+        localStorage.setItem('topics', JSON.stringify(topics));
+        localStorage.setItem('questions', JSON.stringify(questions));
+        document.getElementById('editTopicInput').value = '';
+        document.getElementById('editTopicModal').classList.add('hidden');
+        document.getElementById('topicList').innerHTML = topics.map((topic, i) => `<li class="flex justify-between items-center p-2 bg-gray-50 rounded-lg"><span class="text-gray-700">${topic}</span><span class="space-x-2"><button class="btn bg-blue-500 text-white hover:bg-blue-600 edit-topic-btn" style="padding-left: 15px; padding-right: 15px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${i}">Edit</button><button class="btn bg-red-500 text-white hover:bg-red-600 delete-topic-btn" style="padding-left: 15px; padding-right: 15px; padding-top: 7px; padding-bottom: 7px; border-radius: 4px;" data-index="${i}">Delete</button></span></li>`).join('');
+        updateTopicDropdowns();
+      }
+    });
+
+    document.getElementById('closeEditTopicModal').addEventListener('click', () => {
+      document.getElementById('editTopicInput').value = '';
+      document.getElementById('editTopicModal').classList.add('hidden');
+    });
+
+    document.getElementById('exportExcel').addEventListener('click', () => {
+      const csv = 'Topic,Question,Template,Options\n' + questions.map(q => {
+        const topicIndex = questions.filter(tq => tq.topic === q.topic).indexOf(q) + 1;
+        return `${q.topic || ''},Q${topicIndex},${q.question},${q.template},${q.options.join(';')}`;
+      }).join('\n');
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'questions.csv';
+      link.click();
+    });
+
+    document.getElementById('topicFilter').addEventListener('change', (e) => {
+      const selectedTopic = e.target.value;
+      filteredQuestions = selectedTopic === 'All' ? [...questions] : questions.filter(q => q.topic === selectedTopic);
+      currentQuestionIndex = 0;
+      loadQuestion();
+    });
+
+    document.getElementById('manageTopicFilter').addEventListener('change', (e) => {
+      document.getElementById('showManage').click();
+    });
+
+    document.getElementById('importLocalData').addEventListener('click', () => {
+      document.getElementById('importLocalFile').click();
+    });
+
+    document.getElementById('importLocalFile').addEventListener('change', importLocalData);
+
+    updateTopicDropdowns();
+    loadQuestion();
+  </script>
+</body>
+</html>
